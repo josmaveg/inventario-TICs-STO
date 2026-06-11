@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventario TIC</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f4f4f0;
+  --surface: #ffffff;
+  --surface2: #f0efea;
+  --border: rgba(0,0,0,0.11);
+  --border2: rgba(0,0,0,0.20);
+  --text: #1a1a18;
+  --text2: #5f5e5a;
+  --text3: #8a8880;
+  --blue: #185FA5;
+  --blue-h: #0C447C;
+  --blue-light: #E6F1FB;
+  --blue-txt: #0C447C;
+  --red: #A32D2D;
+  --red-l: #FCEBEB;
+  --amber: #854F0B;
+  --amber-l: #FAEEDA;
+  --green: #3B6D11;
+  --green-l: #EAF3DE;
+  --r: 8px;
+  --rl: 12px;
+  --sh: 0 2px 14px rgba(0,0,0,0.07);
+}
+body { font-family: system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--text); font-size:14px; line-height:1.5; min-height:100vh; }
+
+/* ── LOGIN ── */
+#login-screen { min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--bg); }
+.login-card {
+  background:var(--surface); border:0.5px solid var(--border2); border-radius:var(--rl);
+  padding:2.5rem 2rem; width:min(380px,94vw); box-shadow:var(--sh); text-align:center;
+}
+.login-logo { font-size:44px; margin-bottom:.5rem; }
+.login-card h1 { font-size:21px; font-weight:600; margin-bottom:.25rem; }
+.login-card p { font-size:13px; color:var(--text2); margin-bottom:1.75rem; }
+.login-card input {
+  width:100%; padding:11px 14px; border:0.5px solid var(--border2); border-radius:var(--r);
+  font-size:22px; text-align:center; letter-spacing:6px; margin-bottom:10px;
+  background:var(--surface); color:var(--text); transition:border-color .2s;
+}
+.login-card input:focus { outline:none; border-color:var(--blue); box-shadow:0 0 0 3px rgba(24,95,165,.15); }
+.login-err { font-size:12px; color:var(--red); min-height:18px; margin-bottom:8px; }
+.login-btn {
+  width:100%; padding:11px; background:var(--blue); color:#fff; border:none;
+  border-radius:var(--r); font-size:15px; font-weight:500; cursor:pointer; transition:background .2s;
+}
+.login-btn:hover { background:var(--blue-h); }
+
+/* ── APP ── */
+#app-screen { display:none; flex-direction:column; min-height:100vh; }
+header {
+  background:var(--surface); border-bottom:0.5px solid var(--border);
+  padding:0 1.5rem; height:56px; display:flex; align-items:center; gap:10px;
+  position:sticky; top:0; z-index:50; box-shadow:0 1px 4px rgba(0,0,0,.05);
+}
+.header-logo { font-size:22px; }
+header h1 { font-size:15px; font-weight:600; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.badge { font-size:11px; background:var(--blue-light); color:var(--blue-txt); padding:3px 10px; border-radius:20px; font-weight:500; white-space:nowrap; }
+.sync-wrap { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--text3); }
+.sync-dot { width:7px; height:7px; border-radius:50%; background:#ccc; flex-shrink:0; }
+.sync-dot.ok { background:#5a9e1f; }
+.sync-dot.loading { background:#d48a10; animation:blink 1s infinite; }
+.sync-dot.err { background:var(--red); }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+main { padding:1.25rem 1.5rem; flex:1; max-width:1700px; width:100%; margin:0 auto; }
+
+/* ── STATS BAR ── */
+.stats-bar { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:1.25rem; }
+.stat-card {
+  background:var(--surface); border:0.5px solid var(--border); border-radius:var(--r);
+  padding:10px 16px; display:flex; flex-direction:column; gap:2px; min-width:120px;
+}
+.stat-card .num { font-size:22px; font-weight:600; line-height:1; }
+.stat-card .lbl { font-size:11px; color:var(--text3); }
+.stat-card.blue .num { color:var(--blue); }
+.stat-card.red .num { color:var(--red); }
+.stat-card.amber .num { color:var(--amber); }
+.stat-card.green .num { color:var(--green); }
+
+/* ── TOOLBAR ── */
+.toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:1rem; align-items:center; }
+.search-wrap { flex:1; min-width:220px; position:relative; }
+.search-wrap svg { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--text3); pointer-events:none; }
+.toolbar input[type="text"] {
+  width:100%; padding:8px 12px 8px 34px; border:0.5px solid var(--border2);
+  border-radius:var(--r); background:var(--surface); color:var(--text); font-size:13px; height:36px;
+  transition:border-color .2s;
+}
+.toolbar input[type="text"]:focus { outline:none; border-color:var(--blue); box-shadow:0 0 0 3px rgba(24,95,165,.12); }
+select {
+  padding:7px 10px; border:0.5px solid var(--border2); border-radius:var(--r);
+  background:var(--surface); color:var(--text); font-size:13px; height:36px; cursor:pointer;
+}
+.btn {
+  display:inline-flex; align-items:center; gap:5px; padding:7px 14px;
+  border:0.5px solid var(--border2); border-radius:var(--r);
+  background:var(--surface); color:var(--text); cursor:pointer; font-size:13px;
+  height:36px; white-space:nowrap; font-family:inherit; transition:background .15s;
+}
+.btn:hover { background:var(--surface2); }
+.btn:active { transform:scale(.98); }
+.btn.primary { background:var(--blue); color:#fff; border-color:var(--blue); }
+.btn.primary:hover { background:var(--blue-h); }
+.btn.danger { color:var(--red); border-color:#f09595; }
+.btn.danger:hover { background:var(--red-l); }
+.btn.sm { height:30px; padding:4px 10px; font-size:12px; }
+.count-lbl { font-size:12px; color:var(--text3); align-self:center; margin-left:auto; white-space:nowrap; }
+
+/* ── TABLE ── */
+.table-wrap { overflow-x:auto; border:0.5px solid var(--border); border-radius:var(--rl); background:var(--surface); }
+table { width:100%; border-collapse:collapse; font-size:12px; }
+thead th {
+  background:var(--surface2); padding:9px 10px; text-align:left;
+  font-weight:600; font-size:11px; color:var(--text2); white-space:nowrap;
+  border-bottom:0.5px solid var(--border); user-select:none;
+}
+tbody tr { border-bottom:0.5px solid var(--border); transition:background .1s; }
+tbody tr:last-child { border-bottom:none; }
+tbody tr:hover { background:#fafaf7; }
+td { padding:8px 10px; vertical-align:middle; }
+td.wrap { word-break:break-word; white-space:normal; max-width:170px; }
+td.mono { font-family:'Courier New',monospace; font-size:11px; }
+.tag { display:inline-flex; align-items:center; gap:3px; font-size:10px; padding:2px 8px; border-radius:20px; font-weight:600; white-space:nowrap; }
+.tag.ok { background:var(--green-l); color:var(--green); }
+.tag.warn { background:var(--amber-l); color:var(--amber); }
+.tag.err { background:var(--red-l); color:var(--red); }
+.actions { display:flex; gap:3px; }
+.ic-btn { background:none; border:none; cursor:pointer; padding:5px; color:var(--text3); border-radius:5px; font-size:14px; display:flex; align-items:center; transition:background .1s; }
+.ic-btn:hover { color:var(--text); background:var(--surface2); }
+.empty-row td { text-align:center; padding:3.5rem; color:var(--text3); font-size:13px; }
+
+/* ── OVERLAY / MODAL ── */
+.overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:flex-start; justify-content:center; z-index:200; padding:2rem 1rem; overflow-y:auto; }
+.overlay.hidden { display:none; }
+.modal {
+  background:var(--surface); border-radius:var(--rl); border:0.5px solid var(--border2);
+  padding:1.75rem; width:min(700px,98vw); position:relative; box-shadow:0 8px 40px rgba(0,0,0,.15);
+}
+.modal h2 { font-size:16px; font-weight:600; margin-bottom:1.25rem; display:flex; align-items:center; gap:8px; }
+.close-btn { position:absolute; top:14px; right:14px; background:none; border:none; cursor:pointer; font-size:18px; color:var(--text3); padding:4px 6px; border-radius:5px; line-height:1; }
+.close-btn:hover { color:var(--text); background:var(--surface2); }
+.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; }
+.form-group { display:flex; flex-direction:column; gap:4px; }
+.form-group.full { grid-column:1/-1; }
+.form-group label { font-size:11px; color:var(--text2); font-weight:600; text-transform:uppercase; letter-spacing:.4px; }
+.form-group input, .form-group select, .form-group textarea {
+  padding:8px 10px; border:0.5px solid var(--border2); border-radius:var(--r);
+  background:var(--surface); color:var(--text); font-size:13px; font-family:inherit; transition:border-color .2s;
+}
+.form-group input:focus, .form-group textarea:focus { outline:none; border-color:var(--blue); box-shadow:0 0 0 3px rgba(24,95,165,.12); }
+.form-group textarea { resize:vertical; min-height:72px; }
+.modal-footer { display:flex; justify-content:flex-end; gap:8px; margin-top:1.5rem; padding-top:1rem; border-top:0.5px solid var(--border); flex-wrap:wrap; }
+.modal-footer .left { margin-right:auto; }
+.section-title { font-size:11px; font-weight:600; color:var(--text3); text-transform:uppercase; letter-spacing:.5px; margin:1rem 0 .5rem; padding-bottom:4px; border-bottom:0.5px solid var(--border); grid-column:1/-1; }
+
+/* ── DETAIL VIEW ── */
+.detail-block { margin-bottom:1rem; }
+.detail-block h3 { font-size:11px; font-weight:600; color:var(--text3); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; padding-bottom:4px; border-bottom:0.5px solid var(--border); }
+.detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 20px; }
+.d-row .lbl { font-size:10px; color:var(--text3); font-weight:600; text-transform:uppercase; letter-spacing:.4px; }
+.d-row .val { font-size:13px; color:var(--text); word-break:break-word; }
+.obs-box { border-radius:var(--r); padding:10px 12px; font-size:13px; margin-top:4px; }
+.obs-err { background:var(--red-l); color:#7a1e1e; }
+.obs-warn { background:var(--amber-l); color:#633806; }
+.obs-ok { background:var(--green-l); color:#2a5208; }
+
+/* ── TOAST ── */
+#toast { position:fixed; bottom:1.5rem; right:1.5rem; background:#1a1a18; color:#fff; padding:10px 18px; border-radius:var(--r); font-size:13px; z-index:999; opacity:0; transition:opacity .3s; pointer-events:none; max-width:340px; }
+#toast.show { opacity:1; }
+
+/* ── LOADING OVERLAY ── */
+#loading { position:fixed; inset:0; background:rgba(255,255,255,.7); display:flex; align-items:center; justify-content:center; z-index:300; }
+#loading.hidden { display:none; }
+.spinner { width:36px; height:36px; border:3px solid #ddd; border-top-color:var(--blue); border-radius:50%; animation:spin .7s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+@media(max-width:600px) {
+  .form-grid, .detail-grid { grid-template-columns:1fr; }
+  main { padding:1rem; }
+  header { padding:0 1rem; }
+  header h1 { font-size:13px; }
+  .stats-bar { gap:6px; }
+  .stat-card { min-width:90px; padding:8px 12px; }
+}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="loading" class="hidden"><div class="spinner"></div></div>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">🖥️</div>
+    <h1>Inventario TIC</h1>
+    <p>Centro educativo · Junta de Castilla y León</p>
+    <input type="password" id="pwd" placeholder="••••••••" autocomplete="current-password"
+      onkeydown="if(event.key==='Enter')doLogin()">
+    <div class="login-err" id="login-err"></div>
+    <button class="login-btn" onclick="doLogin()">Entrar</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app-screen">
+  <header>
+    <span class="header-logo">🖥️</span>
+    <h1>Inventario de equipos informáticos</h1>
+    <div class="sync-wrap">
+      <span class="sync-dot" id="sync-dot"></span>
+      <span id="sync-lbl">—</span>
+    </div>
+    <span class="badge" id="total-badge">— equipos</span>
+    <button class="btn sm" onclick="loadAll()" title="Recargar desde Supabase">↺ Sync</button>
+    <button class="btn sm" onclick="doLogout()">Salir</button>
+  </header>
+
+  <main>
+    <!-- Stats -->
+    <div class="stats-bar" id="stats-bar"></div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="search-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input type="text" id="search" placeholder="Buscar por nº ordenador, ubicación, modelo, ED…" oninput="render()">
+      </div>
+      <select id="f-edificio" onchange="render()"><option value="">Todos los edificios</option></select>
+      <select id="f-ubi" onchange="render()"><option value="">Todas las ubicaciones</option></select>
+      <select id="f-so" onchange="render()"><option value="">Todos los SO</option></select>
+      <select id="f-tipo" onchange="render()"><option value="">Todos los tipos</option></select>
+      <select id="f-estado" onchange="render()">
+        <option value="">Todos los estados</option>
+        <option value="err">Con incidencia</option>
+        <option value="warn">Con aviso</option>
+        <option value="ok">OK</option>
+      </select>
+      <button class="btn primary" onclick="openNew()">＋ Nuevo equipo</button>
+      <span class="count-lbl" id="count-lbl"></span>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Edificio</th>
+            <th>Ubicación</th>
+            <th>Nº Ordenador</th>
+            <th>Tipo / Modelo</th>
+            <th>Procesador (Modelo)</th>
+            <th>SO</th>
+            <th>RAM</th>
+            <th>Almac.</th>
+            <th>Panel Digital</th>
+            <th>Proyector</th>
+            <th>Nº Interno</th>
+            <th>Nº Registro</th>
+            <th>Estado</th>
+            <th style="width:90px"></th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr class="empty-row"><td colspan="14">Cargando datos…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- OVERLAY -->
+<div class="overlay hidden" id="overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal-inner"></div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+// ─────────────────────────────────────────────
+//  CONFIG
+// ─────────────────────────────────────────────
+const SUPABASE_URL  = 'https://ppqbfmyzaogwdbwjqsqf.supabase.co';
+const SUPABASE_KEY  = 'sb_publishable_9XWNYd5w8fTYKDl_1_nmiw_Jj9TnnJz';
+const TABLE         = 'inventario%20TICs';
+const PASSWORD      = '1982STO';
+
+const HEADERS = {
+  'apikey': SUPABASE_KEY,
+  'Authorization': 'Bearer ' + SUPABASE_KEY,
+  'Content-Type': 'application/json',
+  'Prefer': 'return=representation'
+};
+
+// DB column names (snake_case as in Supabase)
+const DB_COLS = ['Edificio','Ubicación','Panel Digital','Proyector','Fijo_Portátil','Modelo','SO','Almacenamiento','Memoria RAM','Número Ord','Num INTERNO','Num REGISTRO','OBSERVACIONES'];
+
+// ─────────────────────────────────────────────
+//  STATE
+// ─────────────────────────────────────────────
+let allData = [];
+
+// ─────────────────────────────────────────────
+//  AUTH
+// ─────────────────────────────────────────────
+function doLogin() {
+  const v = document.getElementById('pwd').value;
+  if (v === PASSWORD) {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app-screen').style.display  = 'flex';
+    loadAll();
+  } else {
+    const el = document.getElementById('login-err');
+    el.textContent = 'Contraseña incorrecta';
+    document.getElementById('pwd').value = '';
+    setTimeout(() => el.textContent = '', 3000);
+  }
+}
+function doLogout() {
+  document.getElementById('app-screen').style.display  = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('pwd').value = '';
+  allData = [];
+}
+
+// ─────────────────────────────────────────────
+//  SUPABASE CRUD
+// ─────────────────────────────────────────────
+async function loadAll() {
+  setSyncStatus('loading','Cargando…');
+  showLoading(true);
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/${TABLE}?select=*&order=id.asc`,
+      { headers: HEADERS }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    allData = await res.json();
+    setSyncStatus('ok', 'Sincronizado');
+    populateFilters();
+    renderStats();
+    render();
+    document.getElementById('total-badge').textContent = allData.length + ' equipos';
+  } catch(e) {
+    setSyncStatus('err', 'Error');
+    toast('❌ Error al cargar: ' + e.message);
+  }
+  showLoading(false);
+}
+
+async function insertRecord(data) {
+  showLoading(true);
+  setSyncStatus('loading','Guardando…');
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}`, {
+      method: 'POST',
+      headers: HEADERS,
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    toast('✅ Equipo añadido');
+    await loadAll();
+  } catch(e) {
+    setSyncStatus('err','Error');
+    toast('❌ Error al guardar: ' + e.message);
+    showLoading(false);
+  }
+}
+
+async function updateRecord(id, data) {
+  showLoading(true);
+  setSyncStatus('loading','Actualizando…');
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: HEADERS,
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    toast('✅ Cambios guardados');
+    await loadAll();
+  } catch(e) {
+    setSyncStatus('err','Error');
+    toast('❌ Error al actualizar: ' + e.message);
+    showLoading(false);
+  }
+}
+
+async function deleteRecord(id) {
+  showLoading(true);
+  setSyncStatus('loading','Eliminando…');
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
+      method: 'DELETE',
+      headers: HEADERS
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    toast('🗑 Equipo eliminado');
+    await loadAll();
+  } catch(e) {
+    setSyncStatus('err','Error');
+    toast('❌ Error al eliminar: ' + e.message);
+    showLoading(false);
+  }
+}
+
+// ─────────────────────────────────────────────
+//  STATS
+// ─────────────────────────────────────────────
+function renderStats() {
+  const total  = allData.length;
+  const err    = allData.filter(d => getStatus(d) === 'err').length;
+  const warn   = allData.filter(d => getStatus(d) === 'warn').length;
+  const ok     = allData.filter(d => getStatus(d) === 'ok').length;
+  document.getElementById('stats-bar').innerHTML = `
+    <div class="stat-card blue"><div class="num">${total}</div><div class="lbl">Total equipos</div></div>
+    <div class="stat-card green"><div class="num">${ok}</div><div class="lbl">Operativos</div></div>
+    <div class="stat-card amber"><div class="num">${warn}</div><div class="lbl">Con aviso</div></div>
+    <div class="stat-card red"><div class="num">${err}</div><div class="lbl">Con incidencia</div></div>
+  `;
+}
+
+// ─────────────────────────────────────────────
+//  FILTERS
+// ─────────────────────────────────────────────
+function populateFilters() {
+  const sets = { edificio: new Set(), ubi: new Set(), so: new Set(), tipo: new Set() };
+  allData.forEach(d => {
+    if (d['Edificio'])     sets.edificio.add(d['Edificio'].trim());
+    if (d['Ubicación'])    sets.ubi.add(d['Ubicación'].trim());
+    if (d['SO'])           sets.so.add(d['SO'].trim());
+    if (d['Fijo_Portátil'] && d['Fijo_Portátil'] !== 'No hay') sets.tipo.add(d['Fijo_Portátil'].trim());
+  });
+  fillSel('f-edificio', [...sets.edificio].sort(), 'Todos los edificios');
+  fillSel('f-ubi',      [...sets.ubi].sort(),      'Todas las ubicaciones');
+  fillSel('f-so',       [...sets.so].sort(),       'Todos los SO');
+  fillSel('f-tipo',     [...sets.tipo].sort(),     'Todos los tipos');
+}
+
+function fillSel(id, opts, ph) {
+  const sel = document.getElementById(id);
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">${ph}</option>`;
+  opts.forEach(v => {
+    const o = document.createElement('option');
+    o.value = o.textContent = v;
+    if (v === cur) o.selected = true;
+    sel.appendChild(o);
+  });
+}
+
+// ─────────────────────────────────────────────
+//  STATUS
+// ─────────────────────────────────────────────
+function getStatus(d) {
+  const obs = (d['OBSERVACIONES'] || '').toLowerCase();
+  if (obs.includes('no enciende') || obs.includes('sin cargador') || obs.includes('sin ed'))
+    return 'err';
+  if (obs.includes('lento') || obs.includes('lleno') || obs.includes('dominio') || obs.includes('etiquetar') || obs.includes('aviso'))
+    return 'warn';
+  return 'ok';
+}
+
+const STATUS_TAG = {
+  err:  '<span class="tag err">⚠ Incidencia</span>',
+  warn: '<span class="tag warn">△ Aviso</span>',
+  ok:   '<span class="tag ok">✓ OK</span>'
+};
+
+// ─────────────────────────────────────────────
+//  RENDER TABLE
+// ─────────────────────────────────────────────
+function render() {
+  const q      = document.getElementById('search').value.toLowerCase().trim();
+  const edif   = document.getElementById('f-edificio').value;
+  const ubi    = document.getElementById('f-ubi').value;
+  const so     = document.getElementById('f-so').value;
+  const tipo   = document.getElementById('f-tipo').value;
+  const estado = document.getElementById('f-estado').value;
+
+  const rows = allData.filter(d => {
+    const all = Object.values(d).join(' ').toLowerCase();
+    return (!q      || all.includes(q))
+        && (!edif   || (d['Edificio']    || '').trim() === edif)
+        && (!ubi    || (d['Ubicación']   || '').trim() === ubi)
+        && (!so     || (d['SO']          || '').trim() === so)
+        && (!tipo   || (d['Fijo_Portátil'] || '').trim() === tipo)
+        && (!estado || getStatus(d) === estado);
+  });
+
+  document.getElementById('count-lbl').textContent = `${rows.length} de ${allData.length} equipos`;
+
+  const tb = document.getElementById('tbody');
+  if (!rows.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="14">Sin resultados para esa búsqueda o filtro</td></tr>';
+    return;
+  }
+
+  tb.innerHTML = rows.map(d => `
+    <tr>
+      <td>${esc(d['Edificio']) || '—'}</td>
+      <td><strong>${esc(d['Ubicación']) || '—'}</strong></td>
+      <td class="mono">${esc(d['Número Ord']) || '—'}</td>
+      <td class="wrap">${esc(d['Fijo_Portátil']) || '—'}</td>
+      <td class="wrap" style="color:var(--text2)">${esc(d['Modelo']) || '—'}</td>
+      <td class="wrap">${esc(d['SO']) || '—'}</td>
+      <td>${esc(d['Memoria RAM']) || '—'}</td>
+      <td>${esc(d['Almacenamiento']) || '—'}</td>
+      <td style="color:var(--text2)">${esc(d['Panel Digital']) || '—'}</td>
+      <td style="color:var(--text2)">${esc(d['Proyector']) || '—'}</td>
+      <td class="mono">${esc(d['Num INTERNO']) || '—'}</td>
+      <td class="mono">${esc(d['Num REGISTRO']) || '—'}</td>
+      <td>${STATUS_TAG[getStatus(d)]}</td>
+      <td><div class="actions">
+        <button class="ic-btn" onclick="openDetail(${d.id})" title="Ver detalle">👁</button>
+        <button class="ic-btn" onclick="openEdit(${d.id})" title="Editar">✏️</button>
+        <button class="ic-btn" onclick="confirmDelete(${d.id})" title="Eliminar">🗑</button>
+      </div></td>
+    </tr>`).join('');
+}
+
+// ─────────────────────────────────────────────
+//  DETAIL MODAL
+// ─────────────────────────────────────────────
+function openDetail(id) {
+  const d = allData.find(x => x.id === id);
+  if (!d) return;
+  const st = getStatus(d);
+  const obsClass = { err:'obs-err', warn:'obs-warn', ok:'obs-ok' }[st];
+  const obsText  = d['OBSERVACIONES'] || 'Sin incidencias registradas';
+
+  document.getElementById('modal-inner').innerHTML = `
+    <button class="close-btn" onclick="closeModal()">✕</button>
+    <h2>🖥️ ${esc(d['Fijo_Portátil'] || 'Equipo')} — ${esc(d['Ubicación'] || '—')}</h2>
+
+    <div class="detail-block">
+      <h3>Identificación</h3>
+      <div class="detail-grid">
+        ${['Edificio','Ubicación','Número Ord','Num INTERNO','Num REGISTRO'].map(k =>
+          `<div class="d-row"><div class="lbl">${k}</div><div class="val">${esc(d[k])||'—'}</div></div>`
+        ).join('')}
+      </div>
+    </div>
+
+    <div class="detail-block">
+      <h3>Hardware y Software</h3>
+      <div class="detail-grid">
+        ${['Fijo_Portátil','Modelo','SO','Almacenamiento','Memoria RAM'].map(k =>
+          `<div class="d-row"><div class="lbl">${k}</div><div class="val">${esc(d[k])||'—'}</div></div>`
+        ).join('')}
+      </div>
+    </div>
+
+    <div class="detail-block">
+      <h3>Periféricos de aula</h3>
+      <div class="detail-grid">
+        ${['Panel Digital','Proyector'].map(k =>
+          `<div class="d-row"><div class="lbl">${k}</div><div class="val">${esc(d[k])||'—'}</div></div>`
+        ).join('')}
+      </div>
+    </div>
+
+    <div class="detail-block">
+      <h3>Observaciones</h3>
+      <div class="obs-box ${obsClass}">${esc(obsText)}</div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Cerrar</button>
+      <button class="btn primary" onclick="openEdit(${id})">✏️ Editar</button>
+    </div>`;
+  showOverlay();
+}
+
+// ─────────────────────────────────────────────
+//  FORM HELPERS
+// ─────────────────────────────────────────────
+function formField(col, val) {
+  const v = esc(val || '');
+  const full = col === 'OBSERVACIONES' ? ' full' : '';
+  const inner = col === 'OBSERVACIONES'
+    ? `<textarea name="${col}" rows="3">${v}</textarea>`
+    : `<input type="text" name="${col}" value="${v}" placeholder="">`;
+  return `<div class="form-group${full}"><label>${col}</label>${inner}</div>`;
+}
+
+function formHTML(d) {
+  return `<div class="form-grid">
+    <div class="section-title">📍 Identificación</div>
+    ${['Edificio','Ubicación','Número Ord','Num INTERNO','Num REGISTRO'].map(c => formField(c, d?d[c]:'')).join('')}
+    <div class="section-title">💻 Hardware y Software</div>
+    ${['Fijo_Portátil','Modelo','SO','Almacenamiento','Memoria RAM'].map(c => formField(c, d?d[c]:'')).join('')}
+    <div class="section-title">🖥 Periféricos</div>
+    ${['Panel Digital','Proyector'].map(c => formField(c, d?d[c]:'')).join('')}
+    <div class="section-title">📝 Observaciones</div>
+    ${formField('OBSERVACIONES', d?d['OBSERVACIONES']:'')}
+  </div>`;
+}
+
+function collectForm() {
+  const form = document.getElementById('eform');
+  const obj  = {};
+  DB_COLS.forEach(c => {
+    const el = form.querySelector(`[name="${CSS.escape(c)}"]`);
+    obj[c] = el ? el.value.trim() : '';
+  });
+  return obj;
+}
+
+// ─────────────────────────────────────────────
+//  NEW / EDIT MODALS
+// ─────────────────────────────────────────────
+function openNew() {
+  document.getElementById('modal-inner').innerHTML = `
+    <button class="close-btn" onclick="closeModal()">✕</button>
+    <h2>➕ Nuevo equipo</h2>
+    <form id="eform" onsubmit="return false">${formHTML(null)}</form>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" onclick="submitNew()">Guardar en Supabase ↑</button>
+    </div>`;
+  showOverlay();
+}
+
+async function submitNew() {
+  closeModal();
+  await insertRecord(collectForm());
+}
+
+function openEdit(id) {
+  const d = allData.find(x => x.id === id);
+  if (!d) return;
+  document.getElementById('modal-inner').innerHTML = `
+    <button class="close-btn" onclick="closeModal()">✕</button>
+    <h2>✏️ Editar equipo — ID ${id}</h2>
+    <form id="eform" onsubmit="return false">${formHTML(d)}</form>
+    <div class="modal-footer">
+      <div class="left">
+        <button class="btn danger" onclick="confirmDelete(${id})">🗑 Eliminar</button>
+      </div>
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" onclick="submitEdit(${id})">Guardar cambios ↑</button>
+    </div>`;
+  showOverlay();
+}
+
+async function submitEdit(id) {
+  closeModal();
+  await updateRecord(id, collectForm());
+}
+
+async function confirmDelete(id) {
+  const d    = allData.find(x => x.id === id);
+  const name = d ? (d['Número Ord'] || d['Fijo_Portátil'] || d['Ubicación'] || 'ID ' + id) : 'ID ' + id;
+  if (!confirm(`¿Eliminar "${name}" del inventario?\nEsta acción no se puede deshacer.`)) return;
+  closeModal();
+  await deleteRecord(id);
+}
+
+// ─────────────────────────────────────────────
+//  UI HELPERS
+// ─────────────────────────────────────────────
+function showOverlay()  { document.getElementById('overlay').classList.remove('hidden'); }
+function closeModal()   { document.getElementById('overlay').classList.add('hidden'); }
+function showLoading(v) { document.getElementById('loading').classList.toggle('hidden', !v); }
+
+function setSyncStatus(state, lbl) {
+  document.getElementById('sync-dot').className = 'sync-dot ' + state;
+  document.getElementById('sync-lbl').textContent = lbl;
+}
+
+let _toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
