@@ -4,7 +4,482 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Inventario TIC</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js">
+// ══════════════════════════════════════
+//  EXPORT FUNCTIONS
+// ══════════════════════════════════════
+function getVisibleRows() {
+  const q=document.getElementById('search').value.toLowerCase().trim();
+  const ed=document.getElementById('f-edificio').value;
+  const ubi=document.getElementById('f-ubi').value;
+  const so=document.getElementById('f-so').value;
+  const tipo=document.getElementById('f-tipo').value;
+  const estado=document.getElementById('f-estado').value;
+  return allData.filter(d => {
+    const all=Object.values(d).join(' ').toLowerCase();
+    return (!q||all.includes(q))&&(!ed||(d['Edificio']||'').trim()===ed)&&(!ubi||(d['Ubicacion']||'').trim()===ubi)&&(!so||(d['SO']||'').trim()===so)&&(!tipo||(d['Fijo_Portatil']||'').trim()===tipo)&&(!estado||getStatus(d)===estado);
+  });
+}
+
+const EXPORT_COLS = ['Edificio','Ubicacion','Panel_Digital','Proyector','Fijo_Portatil','Modelo','SO','Almacenamiento','Memoria_RAM','Numero_Ord','Num_INTERNO','Num_REGISTRO','OBSERVACIONES','Estado','Motivo_Estado'];
+const EXPORT_LABELS = ['Edificio','Ubicación','Panel Digital','Proyector','Tipo/Portátil','Modelo','SO','Almacenamiento','Memoria RAM','Nº Ordenador','Nº Interno','Nº Registro','Observaciones','Estado','Motivo Estado'];
+
+function rowsToArray(rows) {
+  return rows.map(d => EXPORT_COLS.map(c => d[c] || ''));
+}
+
+function exportExcel(rows) {
+  rows = rows || getVisibleRows();
+  const wsData = [EXPORT_LABELS, ...rowsToArray(rows)];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  // Column widths
+  ws['!cols'] = [12,16,14,14,22,28,22,14,12,18,14,14,30,14,20].map(w=>({wch:w}));
+  // Header style (row 0 bold)
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let C=range.s.c; C<=range.e.c; C++) {
+    const cell = ws[XLSX.utils.encode_cell({r:0,c:C})];
+    if (cell) cell.s = { font:{bold:true}, fill:{fgColor:{rgb:"185FA5"}}, alignment:{horizontal:"center"} };
+  }
+  XLSX.utils.book_append_sheet(wb, ws, 'Inventario TIC');
+  const fname = `inventario_TIC_${today()}.xlsx`;
+  XLSX.writeFile(wb, fname);
+  toast('📊 Excel exportado: ' + fname);
+}
+
+function exportExcelAll() {
+  exportExcel(allData);
+  toast('📊 Excel completo exportado (' + allData.length + ' equipos)');
+}
+
+function exportPDF() {
+  const rows = getVisibleRows();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+  // Title
+  doc.setFontSize(14);
+  doc.setTextColor(24, 95, 165);
+  doc.text('Inventario TIC · IES STO', 14, 14);
+  doc.setFontSize(9);
+  doc.setTextColor(100);
+  doc.text(`Exportado el ${fmtDate(today())} · ${rows.length} equipos`, 14, 20);
+
+  // Summary stats
+  const ok=rows.filter(d=>getStatus(d)==='ok').length;
+  const warn=rows.filter(d=>getStatus(d)==='warn').length;
+  const err=rows.filter(d=>getStatus(d)==='err').length;
+  doc.setFontSize(8);
+  doc.setTextColor(59,109,17); doc.text(`✓ Operativos: ${ok}`, 14, 26);
+  doc.setTextColor(133,79,11); doc.text(`△ Avisos: ${warn}`, 55, 26);
+  doc.setTextColor(163,45,45); doc.text(`⚠ Incidencias: ${err}`, 96, 26);
+
+  // Compact columns for PDF
+  const pdfCols = ['Edificio','Ubicacion','Fijo_Portatil','Modelo','SO','Memoria_RAM','Almacenamiento','Numero_Ord','Num_INTERNO','Num_REGISTRO','OBSERVACIONES'];
+  const pdfLabels = ['Edificio','Ubicación','Tipo','Modelo','SO','RAM','Almac.','Nº Ord.','Nº Interno','Nº Reg.','Observaciones'];
+
+  const tableRows = rows.map(d => {
+    const st = getStatus(d);
+    return pdfCols.map(c => {
+      let v = (d[c] || '').toString();
+      if (v.length > 30) v = v.slice(0,28)+'…';
+      return v;
+    });
+  });
+
+  doc.autoTable({
+    head: [pdfLabels],
+    body: tableRows,
+    startY: 30,
+    styles: { fontSize: 7, cellPadding: 1.5, overflow: 'ellipsize' },
+    headStyles: { fillColor: [24, 95, 165], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    alternateRowStyles: { fillColor: [245, 245, 240] },
+    didParseCell: function(data) {
+      if (data.section === 'body') {
+        const row = rows[data.row.index];
+        const st = getStatus(row);
+        if (st === 'err') data.cell.styles.textColor = [163,45,45];
+        else if (st === 'warn') data.cell.styles.textColor = [133,79,11];
+      }
+    },
+    columnStyles: {
+      0:{cellWidth:16}, 1:{cellWidth:22}, 2:{cellWidth:24}, 3:{cellWidth:30},
+      4:{cellWidth:25}, 5:{cellWidth:12}, 6:{cellWidth:14}, 7:{cellWidth:24},
+      8:{cellWidth:20}, 9:{cellWidth:18}, 10:{cellWidth:35}
+    }
+  });
+
+  // Page numbers
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i=1; i<=pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7); doc.setTextColor(150);
+    doc.text(`Página ${i} de ${pageCount}`, doc.internal.pageSize.getWidth()-30, doc.internal.pageSize.getHeight()-5);
+  }
+
+  const fname = `inventario_TIC_${today()}.pdf`;
+  doc.save(fname);
+  toast('📄 PDF exportado: ' + fname);
+}
+
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
+// ══════════════════════════════════════
+//  EXPORT FUNCTIONS
+// ══════════════════════════════════════
+function getVisibleRows() {
+  const q=document.getElementById('search').value.toLowerCase().trim();
+  const ed=document.getElementById('f-edificio').value;
+  const ubi=document.getElementById('f-ubi').value;
+  const so=document.getElementById('f-so').value;
+  const tipo=document.getElementById('f-tipo').value;
+  const estado=document.getElementById('f-estado').value;
+  return allData.filter(d => {
+    const all=Object.values(d).join(' ').toLowerCase();
+    return (!q||all.includes(q))&&(!ed||(d['Edificio']||'').trim()===ed)&&(!ubi||(d['Ubicacion']||'').trim()===ubi)&&(!so||(d['SO']||'').trim()===so)&&(!tipo||(d['Fijo_Portatil']||'').trim()===tipo)&&(!estado||getStatus(d)===estado);
+  });
+}
+
+const EXPORT_COLS = ['Edificio','Ubicacion','Panel_Digital','Proyector','Fijo_Portatil','Modelo','SO','Almacenamiento','Memoria_RAM','Numero_Ord','Num_INTERNO','Num_REGISTRO','OBSERVACIONES','Estado','Motivo_Estado'];
+const EXPORT_LABELS = ['Edificio','Ubicación','Panel Digital','Proyector','Tipo/Portátil','Modelo','SO','Almacenamiento','Memoria RAM','Nº Ordenador','Nº Interno','Nº Registro','Observaciones','Estado','Motivo Estado'];
+
+function rowsToArray(rows) {
+  return rows.map(d => EXPORT_COLS.map(c => d[c] || ''));
+}
+
+function exportExcel(rows) {
+  rows = rows || getVisibleRows();
+  const wsData = [EXPORT_LABELS, ...rowsToArray(rows)];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  // Column widths
+  ws['!cols'] = [12,16,14,14,22,28,22,14,12,18,14,14,30,14,20].map(w=>({wch:w}));
+  // Header style (row 0 bold)
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let C=range.s.c; C<=range.e.c; C++) {
+    const cell = ws[XLSX.utils.encode_cell({r:0,c:C})];
+    if (cell) cell.s = { font:{bold:true}, fill:{fgColor:{rgb:"185FA5"}}, alignment:{horizontal:"center"} };
+  }
+  XLSX.utils.book_append_sheet(wb, ws, 'Inventario TIC');
+  const fname = `inventario_TIC_${today()}.xlsx`;
+  XLSX.writeFile(wb, fname);
+  toast('📊 Excel exportado: ' + fname);
+}
+
+function exportExcelAll() {
+  exportExcel(allData);
+  toast('📊 Excel completo exportado (' + allData.length + ' equipos)');
+}
+
+function exportPDF() {
+  const rows = getVisibleRows();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+  // Title
+  doc.setFontSize(14);
+  doc.setTextColor(24, 95, 165);
+  doc.text('Inventario TIC · IES STO', 14, 14);
+  doc.setFontSize(9);
+  doc.setTextColor(100);
+  doc.text(`Exportado el ${fmtDate(today())} · ${rows.length} equipos`, 14, 20);
+
+  // Summary stats
+  const ok=rows.filter(d=>getStatus(d)==='ok').length;
+  const warn=rows.filter(d=>getStatus(d)==='warn').length;
+  const err=rows.filter(d=>getStatus(d)==='err').length;
+  doc.setFontSize(8);
+  doc.setTextColor(59,109,17); doc.text(`✓ Operativos: ${ok}`, 14, 26);
+  doc.setTextColor(133,79,11); doc.text(`△ Avisos: ${warn}`, 55, 26);
+  doc.setTextColor(163,45,45); doc.text(`⚠ Incidencias: ${err}`, 96, 26);
+
+  // Compact columns for PDF
+  const pdfCols = ['Edificio','Ubicacion','Fijo_Portatil','Modelo','SO','Memoria_RAM','Almacenamiento','Numero_Ord','Num_INTERNO','Num_REGISTRO','OBSERVACIONES'];
+  const pdfLabels = ['Edificio','Ubicación','Tipo','Modelo','SO','RAM','Almac.','Nº Ord.','Nº Interno','Nº Reg.','Observaciones'];
+
+  const tableRows = rows.map(d => {
+    const st = getStatus(d);
+    return pdfCols.map(c => {
+      let v = (d[c] || '').toString();
+      if (v.length > 30) v = v.slice(0,28)+'…';
+      return v;
+    });
+  });
+
+  doc.autoTable({
+    head: [pdfLabels],
+    body: tableRows,
+    startY: 30,
+    styles: { fontSize: 7, cellPadding: 1.5, overflow: 'ellipsize' },
+    headStyles: { fillColor: [24, 95, 165], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    alternateRowStyles: { fillColor: [245, 245, 240] },
+    didParseCell: function(data) {
+      if (data.section === 'body') {
+        const row = rows[data.row.index];
+        const st = getStatus(row);
+        if (st === 'err') data.cell.styles.textColor = [163,45,45];
+        else if (st === 'warn') data.cell.styles.textColor = [133,79,11];
+      }
+    },
+    columnStyles: {
+      0:{cellWidth:16}, 1:{cellWidth:22}, 2:{cellWidth:24}, 3:{cellWidth:30},
+      4:{cellWidth:25}, 5:{cellWidth:12}, 6:{cellWidth:14}, 7:{cellWidth:24},
+      8:{cellWidth:20}, 9:{cellWidth:18}, 10:{cellWidth:35}
+    }
+  });
+
+  // Page numbers
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i=1; i<=pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7); doc.setTextColor(150);
+    doc.text(`Página ${i} de ${pageCount}`, doc.internal.pageSize.getWidth()-30, doc.internal.pageSize.getHeight()-5);
+  }
+
+  const fname = `inventario_TIC_${today()}.pdf`;
+  doc.save(fname);
+  toast('📄 PDF exportado: ' + fname);
+}
+
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">
+// ══════════════════════════════════════
+//  EXPORT FUNCTIONS
+// ══════════════════════════════════════
+function getVisibleRows() {
+  const q=document.getElementById('search').value.toLowerCase().trim();
+  const ed=document.getElementById('f-edificio').value;
+  const ubi=document.getElementById('f-ubi').value;
+  const so=document.getElementById('f-so').value;
+  const tipo=document.getElementById('f-tipo').value;
+  const estado=document.getElementById('f-estado').value;
+  return allData.filter(d => {
+    const all=Object.values(d).join(' ').toLowerCase();
+    return (!q||all.includes(q))&&(!ed||(d['Edificio']||'').trim()===ed)&&(!ubi||(d['Ubicacion']||'').trim()===ubi)&&(!so||(d['SO']||'').trim()===so)&&(!tipo||(d['Fijo_Portatil']||'').trim()===tipo)&&(!estado||getStatus(d)===estado);
+  });
+}
+
+const EXPORT_COLS = ['Edificio','Ubicacion','Panel_Digital','Proyector','Fijo_Portatil','Modelo','SO','Almacenamiento','Memoria_RAM','Numero_Ord','Num_INTERNO','Num_REGISTRO','OBSERVACIONES','Estado','Motivo_Estado'];
+const EXPORT_LABELS = ['Edificio','Ubicación','Panel Digital','Proyector','Tipo/Portátil','Modelo','SO','Almacenamiento','Memoria RAM','Nº Ordenador','Nº Interno','Nº Registro','Observaciones','Estado','Motivo Estado'];
+
+function rowsToArray(rows) {
+  return rows.map(d => EXPORT_COLS.map(c => d[c] || ''));
+}
+
+function exportExcel(rows) {
+  rows = rows || getVisibleRows();
+  const wsData = [EXPORT_LABELS, ...rowsToArray(rows)];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  // Column widths
+  ws['!cols'] = [12,16,14,14,22,28,22,14,12,18,14,14,30,14,20].map(w=>({wch:w}));
+  // Header style (row 0 bold)
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let C=range.s.c; C<=range.e.c; C++) {
+    const cell = ws[XLSX.utils.encode_cell({r:0,c:C})];
+    if (cell) cell.s = { font:{bold:true}, fill:{fgColor:{rgb:"185FA5"}}, alignment:{horizontal:"center"} };
+  }
+  XLSX.utils.book_append_sheet(wb, ws, 'Inventario TIC');
+  const fname = `inventario_TIC_${today()}.xlsx`;
+  XLSX.writeFile(wb, fname);
+  toast('📊 Excel exportado: ' + fname);
+}
+
+function exportExcelAll() {
+  exportExcel(allData);
+  toast('📊 Excel completo exportado (' + allData.length + ' equipos)');
+}
+
+function exportPDF() {
+  const rows = getVisibleRows();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+  // Title
+  doc.setFontSize(14);
+  doc.setTextColor(24, 95, 165);
+  doc.text('Inventario TIC · IES STO', 14, 14);
+  doc.setFontSize(9);
+  doc.setTextColor(100);
+  doc.text(`Exportado el ${fmtDate(today())} · ${rows.length} equipos`, 14, 20);
+
+  // Summary stats
+  const ok=rows.filter(d=>getStatus(d)==='ok').length;
+  const warn=rows.filter(d=>getStatus(d)==='warn').length;
+  const err=rows.filter(d=>getStatus(d)==='err').length;
+  doc.setFontSize(8);
+  doc.setTextColor(59,109,17); doc.text(`✓ Operativos: ${ok}`, 14, 26);
+  doc.setTextColor(133,79,11); doc.text(`△ Avisos: ${warn}`, 55, 26);
+  doc.setTextColor(163,45,45); doc.text(`⚠ Incidencias: ${err}`, 96, 26);
+
+  // Compact columns for PDF
+  const pdfCols = ['Edificio','Ubicacion','Fijo_Portatil','Modelo','SO','Memoria_RAM','Almacenamiento','Numero_Ord','Num_INTERNO','Num_REGISTRO','OBSERVACIONES'];
+  const pdfLabels = ['Edificio','Ubicación','Tipo','Modelo','SO','RAM','Almac.','Nº Ord.','Nº Interno','Nº Reg.','Observaciones'];
+
+  const tableRows = rows.map(d => {
+    const st = getStatus(d);
+    return pdfCols.map(c => {
+      let v = (d[c] || '').toString();
+      if (v.length > 30) v = v.slice(0,28)+'…';
+      return v;
+    });
+  });
+
+  doc.autoTable({
+    head: [pdfLabels],
+    body: tableRows,
+    startY: 30,
+    styles: { fontSize: 7, cellPadding: 1.5, overflow: 'ellipsize' },
+    headStyles: { fillColor: [24, 95, 165], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    alternateRowStyles: { fillColor: [245, 245, 240] },
+    didParseCell: function(data) {
+      if (data.section === 'body') {
+        const row = rows[data.row.index];
+        const st = getStatus(row);
+        if (st === 'err') data.cell.styles.textColor = [163,45,45];
+        else if (st === 'warn') data.cell.styles.textColor = [133,79,11];
+      }
+    },
+    columnStyles: {
+      0:{cellWidth:16}, 1:{cellWidth:22}, 2:{cellWidth:24}, 3:{cellWidth:30},
+      4:{cellWidth:25}, 5:{cellWidth:12}, 6:{cellWidth:14}, 7:{cellWidth:24},
+      8:{cellWidth:20}, 9:{cellWidth:18}, 10:{cellWidth:35}
+    }
+  });
+
+  // Page numbers
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i=1; i<=pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7); doc.setTextColor(150);
+    doc.text(`Página ${i} de ${pageCount}`, doc.internal.pageSize.getWidth()-30, doc.internal.pageSize.getHeight()-5);
+  }
+
+  const fname = `inventario_TIC_${today()}.pdf`;
+  doc.save(fname);
+  toast('📄 PDF exportado: ' + fname);
+}
+
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.6.0/jspdf.plugin.autotable.min.js">
+// ══════════════════════════════════════
+//  EXPORT FUNCTIONS
+// ══════════════════════════════════════
+function getVisibleRows() {
+  const q=document.getElementById('search').value.toLowerCase().trim();
+  const ed=document.getElementById('f-edificio').value;
+  const ubi=document.getElementById('f-ubi').value;
+  const so=document.getElementById('f-so').value;
+  const tipo=document.getElementById('f-tipo').value;
+  const estado=document.getElementById('f-estado').value;
+  return allData.filter(d => {
+    const all=Object.values(d).join(' ').toLowerCase();
+    return (!q||all.includes(q))&&(!ed||(d['Edificio']||'').trim()===ed)&&(!ubi||(d['Ubicacion']||'').trim()===ubi)&&(!so||(d['SO']||'').trim()===so)&&(!tipo||(d['Fijo_Portatil']||'').trim()===tipo)&&(!estado||getStatus(d)===estado);
+  });
+}
+
+const EXPORT_COLS = ['Edificio','Ubicacion','Panel_Digital','Proyector','Fijo_Portatil','Modelo','SO','Almacenamiento','Memoria_RAM','Numero_Ord','Num_INTERNO','Num_REGISTRO','OBSERVACIONES','Estado','Motivo_Estado'];
+const EXPORT_LABELS = ['Edificio','Ubicación','Panel Digital','Proyector','Tipo/Portátil','Modelo','SO','Almacenamiento','Memoria RAM','Nº Ordenador','Nº Interno','Nº Registro','Observaciones','Estado','Motivo Estado'];
+
+function rowsToArray(rows) {
+  return rows.map(d => EXPORT_COLS.map(c => d[c] || ''));
+}
+
+function exportExcel(rows) {
+  rows = rows || getVisibleRows();
+  const wsData = [EXPORT_LABELS, ...rowsToArray(rows)];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  // Column widths
+  ws['!cols'] = [12,16,14,14,22,28,22,14,12,18,14,14,30,14,20].map(w=>({wch:w}));
+  // Header style (row 0 bold)
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let C=range.s.c; C<=range.e.c; C++) {
+    const cell = ws[XLSX.utils.encode_cell({r:0,c:C})];
+    if (cell) cell.s = { font:{bold:true}, fill:{fgColor:{rgb:"185FA5"}}, alignment:{horizontal:"center"} };
+  }
+  XLSX.utils.book_append_sheet(wb, ws, 'Inventario TIC');
+  const fname = `inventario_TIC_${today()}.xlsx`;
+  XLSX.writeFile(wb, fname);
+  toast('📊 Excel exportado: ' + fname);
+}
+
+function exportExcelAll() {
+  exportExcel(allData);
+  toast('📊 Excel completo exportado (' + allData.length + ' equipos)');
+}
+
+function exportPDF() {
+  const rows = getVisibleRows();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+  // Title
+  doc.setFontSize(14);
+  doc.setTextColor(24, 95, 165);
+  doc.text('Inventario TIC · IES STO', 14, 14);
+  doc.setFontSize(9);
+  doc.setTextColor(100);
+  doc.text(`Exportado el ${fmtDate(today())} · ${rows.length} equipos`, 14, 20);
+
+  // Summary stats
+  const ok=rows.filter(d=>getStatus(d)==='ok').length;
+  const warn=rows.filter(d=>getStatus(d)==='warn').length;
+  const err=rows.filter(d=>getStatus(d)==='err').length;
+  doc.setFontSize(8);
+  doc.setTextColor(59,109,17); doc.text(`✓ Operativos: ${ok}`, 14, 26);
+  doc.setTextColor(133,79,11); doc.text(`△ Avisos: ${warn}`, 55, 26);
+  doc.setTextColor(163,45,45); doc.text(`⚠ Incidencias: ${err}`, 96, 26);
+
+  // Compact columns for PDF
+  const pdfCols = ['Edificio','Ubicacion','Fijo_Portatil','Modelo','SO','Memoria_RAM','Almacenamiento','Numero_Ord','Num_INTERNO','Num_REGISTRO','OBSERVACIONES'];
+  const pdfLabels = ['Edificio','Ubicación','Tipo','Modelo','SO','RAM','Almac.','Nº Ord.','Nº Interno','Nº Reg.','Observaciones'];
+
+  const tableRows = rows.map(d => {
+    const st = getStatus(d);
+    return pdfCols.map(c => {
+      let v = (d[c] || '').toString();
+      if (v.length > 30) v = v.slice(0,28)+'…';
+      return v;
+    });
+  });
+
+  doc.autoTable({
+    head: [pdfLabels],
+    body: tableRows,
+    startY: 30,
+    styles: { fontSize: 7, cellPadding: 1.5, overflow: 'ellipsize' },
+    headStyles: { fillColor: [24, 95, 165], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    alternateRowStyles: { fillColor: [245, 245, 240] },
+    didParseCell: function(data) {
+      if (data.section === 'body') {
+        const row = rows[data.row.index];
+        const st = getStatus(row);
+        if (st === 'err') data.cell.styles.textColor = [163,45,45];
+        else if (st === 'warn') data.cell.styles.textColor = [133,79,11];
+      }
+    },
+    columnStyles: {
+      0:{cellWidth:16}, 1:{cellWidth:22}, 2:{cellWidth:24}, 3:{cellWidth:30},
+      4:{cellWidth:25}, 5:{cellWidth:12}, 6:{cellWidth:14}, 7:{cellWidth:24},
+      8:{cellWidth:20}, 9:{cellWidth:18}, 10:{cellWidth:35}
+    }
+  });
+
+  // Page numbers
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i=1; i<=pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7); doc.setTextColor(150);
+    doc.text(`Página ${i} de ${pageCount}`, doc.internal.pageSize.getWidth()-30, doc.internal.pageSize.getHeight()-5);
+  }
+
+  const fname = `inventario_TIC_${today()}.pdf`;
+  doc.save(fname);
+  toast('📄 PDF exportado: ' + fname);
+}
+
+</script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -229,6 +704,10 @@ td.mono{font-family:'Courier New',monospace;font-size:11px;}
           <option value="ok">OK</option>
         </select>
         <button class="btn primary" onclick="openNew()">＋ Nuevo equipo</button>
+        <div class="sep"></div>
+        <button class="btn" onclick="exportExcel()" title="Exportar a Excel los datos visibles">📊 Excel</button>
+        <button class="btn" onclick="exportPDF()" title="Exportar a PDF los datos visibles">📄 PDF</button>
+        <button class="btn sm" onclick="exportExcelAll()" title="Exportar todos los datos">⬇ Todo</button>
         <span class="count-lbl" id="count-lbl"></span>
       </div>
       <div class="table-wrap">
@@ -945,6 +1424,124 @@ function today(){ return new Date().toISOString().split('T')[0]; }
 function fmtDate(d){ if(!d) return '—'; const [y,m,day]=d.split('-'); return `${day}/${m}/${y}`; }
 let _tt;
 function toast(msg){ const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show'); clearTimeout(_tt); _tt=setTimeout(()=>el.classList.remove('show'),3500); }
+
+// ══════════════════════════════════════
+//  EXPORT FUNCTIONS
+// ══════════════════════════════════════
+function getVisibleRows() {
+  const q=document.getElementById('search').value.toLowerCase().trim();
+  const ed=document.getElementById('f-edificio').value;
+  const ubi=document.getElementById('f-ubi').value;
+  const so=document.getElementById('f-so').value;
+  const tipo=document.getElementById('f-tipo').value;
+  const estado=document.getElementById('f-estado').value;
+  return allData.filter(d => {
+    const all=Object.values(d).join(' ').toLowerCase();
+    return (!q||all.includes(q))&&(!ed||(d['Edificio']||'').trim()===ed)&&(!ubi||(d['Ubicacion']||'').trim()===ubi)&&(!so||(d['SO']||'').trim()===so)&&(!tipo||(d['Fijo_Portatil']||'').trim()===tipo)&&(!estado||getStatus(d)===estado);
+  });
+}
+
+const EXPORT_COLS = ['Edificio','Ubicacion','Panel_Digital','Proyector','Fijo_Portatil','Modelo','SO','Almacenamiento','Memoria_RAM','Numero_Ord','Num_INTERNO','Num_REGISTRO','OBSERVACIONES','Estado','Motivo_Estado'];
+const EXPORT_LABELS = ['Edificio','Ubicación','Panel Digital','Proyector','Tipo/Portátil','Modelo','SO','Almacenamiento','Memoria RAM','Nº Ordenador','Nº Interno','Nº Registro','Observaciones','Estado','Motivo Estado'];
+
+function rowsToArray(rows) {
+  return rows.map(d => EXPORT_COLS.map(c => d[c] || ''));
+}
+
+function exportExcel(rows) {
+  rows = rows || getVisibleRows();
+  const wsData = [EXPORT_LABELS, ...rowsToArray(rows)];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  // Column widths
+  ws['!cols'] = [12,16,14,14,22,28,22,14,12,18,14,14,30,14,20].map(w=>({wch:w}));
+  // Header style (row 0 bold)
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let C=range.s.c; C<=range.e.c; C++) {
+    const cell = ws[XLSX.utils.encode_cell({r:0,c:C})];
+    if (cell) cell.s = { font:{bold:true}, fill:{fgColor:{rgb:"185FA5"}}, alignment:{horizontal:"center"} };
+  }
+  XLSX.utils.book_append_sheet(wb, ws, 'Inventario TIC');
+  const fname = `inventario_TIC_${today()}.xlsx`;
+  XLSX.writeFile(wb, fname);
+  toast('📊 Excel exportado: ' + fname);
+}
+
+function exportExcelAll() {
+  exportExcel(allData);
+  toast('📊 Excel completo exportado (' + allData.length + ' equipos)');
+}
+
+function exportPDF() {
+  const rows = getVisibleRows();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+  // Title
+  doc.setFontSize(14);
+  doc.setTextColor(24, 95, 165);
+  doc.text('Inventario TIC · IES STO', 14, 14);
+  doc.setFontSize(9);
+  doc.setTextColor(100);
+  doc.text(`Exportado el ${fmtDate(today())} · ${rows.length} equipos`, 14, 20);
+
+  // Summary stats
+  const ok=rows.filter(d=>getStatus(d)==='ok').length;
+  const warn=rows.filter(d=>getStatus(d)==='warn').length;
+  const err=rows.filter(d=>getStatus(d)==='err').length;
+  doc.setFontSize(8);
+  doc.setTextColor(59,109,17); doc.text(`✓ Operativos: ${ok}`, 14, 26);
+  doc.setTextColor(133,79,11); doc.text(`△ Avisos: ${warn}`, 55, 26);
+  doc.setTextColor(163,45,45); doc.text(`⚠ Incidencias: ${err}`, 96, 26);
+
+  // Compact columns for PDF
+  const pdfCols = ['Edificio','Ubicacion','Fijo_Portatil','Modelo','SO','Memoria_RAM','Almacenamiento','Numero_Ord','Num_INTERNO','Num_REGISTRO','OBSERVACIONES'];
+  const pdfLabels = ['Edificio','Ubicación','Tipo','Modelo','SO','RAM','Almac.','Nº Ord.','Nº Interno','Nº Reg.','Observaciones'];
+
+  const tableRows = rows.map(d => {
+    const st = getStatus(d);
+    return pdfCols.map(c => {
+      let v = (d[c] || '').toString();
+      if (v.length > 30) v = v.slice(0,28)+'…';
+      return v;
+    });
+  });
+
+  doc.autoTable({
+    head: [pdfLabels],
+    body: tableRows,
+    startY: 30,
+    styles: { fontSize: 7, cellPadding: 1.5, overflow: 'ellipsize' },
+    headStyles: { fillColor: [24, 95, 165], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    alternateRowStyles: { fillColor: [245, 245, 240] },
+    didParseCell: function(data) {
+      if (data.section === 'body') {
+        const row = rows[data.row.index];
+        const st = getStatus(row);
+        if (st === 'err') data.cell.styles.textColor = [163,45,45];
+        else if (st === 'warn') data.cell.styles.textColor = [133,79,11];
+      }
+    },
+    columnStyles: {
+      0:{cellWidth:16}, 1:{cellWidth:22}, 2:{cellWidth:24}, 3:{cellWidth:30},
+      4:{cellWidth:25}, 5:{cellWidth:12}, 6:{cellWidth:14}, 7:{cellWidth:24},
+      8:{cellWidth:20}, 9:{cellWidth:18}, 10:{cellWidth:35}
+    }
+  });
+
+  // Page numbers
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i=1; i<=pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7); doc.setTextColor(150);
+    doc.text(`Página ${i} de ${pageCount}`, doc.internal.pageSize.getWidth()-30, doc.internal.pageSize.getHeight()-5);
+  }
+
+  const fname = `inventario_TIC_${today()}.pdf`;
+  doc.save(fname);
+  toast('📄 PDF exportado: ' + fname);
+}
+
 </script>
 </body>
 </html>
