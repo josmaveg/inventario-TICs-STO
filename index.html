@@ -797,7 +797,7 @@ td.mono{font-family:'Courier New',monospace;font-size:11px;}
 //  CONFIG
 // ══════════════════════════════════════
 const SUPABASE_URL = 'https://ppqbfmyzaogwdbwjqsqf.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBwcWJmbXl6YW9nd2Rid2pxc3FmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExMDMyNDgsImV4cCI6MjA5NjY3OTI0OH0.nM-1rT4MaJc_JVrrBx6NUO2d_oE6LpCTd5grU-cr44U';
+const SUPABASE_KEY = 'sb_publishable_9XWNYd5w8fTYKDl_1_nmiw_Jj9TnnJz';
 const TABLE_INV    = 'inventario%20TICs';
 const TABLE_INC    = 'incidencias';
 const PASSWORD     = '1982STO';
@@ -893,8 +893,11 @@ async function autoRegisterIncidencias() {
   allData.forEach(d => {
     const obs = (d['OBSERVACIONES'] || '').trim();
     if (!obs) return;
-    // Check if already registered
-    const ya = allInc.some(i => i.equipo_id === d.id && i.defecto === obs);
+    // Check if already registered - match by equipo_id OR by defecto text to avoid duplicates
+    const ya = allInc.some(i =>
+      (i.equipo_id === d.id && i.defecto === obs) ||
+      (i.equipo_id === d.id)
+    );
     if (!ya) {
       toCreate.push({
         equipo_id: d.id,
@@ -934,13 +937,38 @@ async function deleteRecord(id)        { showLoading(true); setSyncStatus('loadi
 //  INCIDENCIAS SUPABASE CRUD
 // ══════════════════════════════════════
 async function apiInc(method, qs, body) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_INC}${qs}`, { method, headers: H, body: body ? JSON.stringify(body) : undefined });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  const hdrs = {...H};
+  if (method === 'DELETE') {
+    hdrs['Prefer'] = 'return=minimal';
+    // ensure count header for delete
+    hdrs['Content-Type'] = 'application/json';
+  }
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_INC}${qs}`, {
+    method,
+    headers: hdrs,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`HTTP ${res.status}: ${errText}`);
+  }
   return res;
 }
 async function insertIncidencia(data)     { showLoading(true); try { await apiInc('POST','',data); toast('✅ Incidencia registrada'); await syncAll(); } catch(e) { toast('❌ '+e.message); showLoading(false); } }
 async function updateIncidencia(id, data) { showLoading(true); try { await apiInc('PATCH',`?id=eq.${id}`,data); toast('✅ Incidencia actualizada'); await syncAll(); } catch(e) { toast('❌ '+e.message); showLoading(false); } }
-async function deleteIncidencia(id)       { showLoading(true); try { await apiInc('DELETE',`?id=eq.${id}`); toast('🗑 Incidencia eliminada'); await syncAll(); } catch(e) { toast('❌ '+e.message); showLoading(false); } }
+async function deleteIncidencia(id) {
+  showLoading(true);
+  try {
+    console.log('Deleting incidencia id:', id, typeof id);
+    await apiInc('DELETE', `?id=eq.${id}`);
+    toast('🗑 Incidencia eliminada');
+    await syncAll();
+  } catch(e) {
+    console.error('Delete error:', e);
+    toast('❌ Error al eliminar: ' + e.message);
+    showLoading(false);
+  }
+}
 
 // Marcar resuelta/pendiente con checkbox
 async function toggleIncidencia(id, checked) {
@@ -1210,9 +1238,11 @@ async function submitEditInc(id) {
 }
 
 async function confirmDeleteInc(id) {
+  const numId = Number(id);
+  console.log('confirmDeleteInc called with id:', id, '-> numId:', numId);
   if (!confirm('¿Eliminar esta incidencia? No se puede deshacer.')) return;
   closeModal();
-  await deleteIncidencia(id);
+  await deleteIncidencia(numId);
 }
 
 // ══════════════════════════════════════
