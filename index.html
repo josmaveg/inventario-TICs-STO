@@ -589,6 +589,9 @@ td.mono{font-family:'Courier New',monospace;font-size:11px;}
 .inc-badge.pendiente{background:var(--red-l);color:var(--red);}
 .inc-badge.resuelta{background:var(--green-l);color:var(--green);}
 .inc-notas{font-size:12px;color:var(--green);margin-top:4px;font-style:italic;}
+.inc-card.huerfana{background:#f5f5f3;border-color:#ccc;opacity:.7;}
+.inc-card.huerfana .inc-equipo,.inc-card.huerfana .inc-defecto{color:var(--text3);}
+.inc-badge.huerfana{background:#e8e8e5;color:#888;}
 .inc-actions{display:flex;gap:4px;flex-shrink:0;}
 
 /* CHARTS */
@@ -888,23 +891,31 @@ async function syncAll() {
 // ══════════════════════════════════════
 //  AUTO-REGISTER INCIDENCIAS FROM OBS
 // ══════════════════════════════════════
+// Palabras clave que convierten una observación en incidencia automática
+const OBS_KEYWORDS = [
+  'no enciende','no funciona','avería','averia','roto','rota',
+  'pantalla rota','teclado roto','no arranca','no hay cargador',
+  'sin cargador','no conecta','no dominio','virus','bloqueado',
+  'no enciende','cargador','pantalla','batería','bateria'
+];
+
 async function autoRegisterIncidencias() {
   const toCreate = [];
   allData.forEach(d => {
-    const obs = (d['OBSERVACIONES'] || '').trim();
+    const obs = (d['OBSERVACIONES'] || '').trim().toLowerCase();
     if (!obs) return;
-    // Check if already registered - match by equipo_id OR by defecto text to avoid duplicates
-    const ya = allInc.some(i =>
-      (i.equipo_id === d.id && i.defecto === obs) ||
-      (i.equipo_id === d.id)
-    );
+    // Only register if obs contains at least one keyword
+    const hasKeyword = OBS_KEYWORDS.some(kw => obs.includes(kw));
+    if (!hasKeyword) return;
+    // Avoid duplicates: don't create if already exists for this equipo_id + same defecto
+    const ya = allInc.some(i => i.equipo_id === d.id && i.defecto.toLowerCase() === (d['OBSERVACIONES']||'').trim().toLowerCase());
     if (!ya) {
       toCreate.push({
         equipo_id: d.id,
         equipo_desc: d['Fijo_Portatil'] || d['Modelo'] || '—',
         ubicacion: (d['Edificio'] ? d['Edificio'] + ' · ' : '') + (d['Ubicacion'] || '—'),
         fecha_apertura: new Date().toISOString().split('T')[0],
-        defecto: obs,
+        defecto: d['OBSERVACIONES'].trim(),
         estado: 'Pendiente'
       });
     }
@@ -916,7 +927,7 @@ async function autoRegisterIncidencias() {
     if (res.ok) {
       const created = await res.json();
       allInc = [...(Array.isArray(created) ? created : [created]), ...allInc];
-      toast(`📋 ${toCreate.length} incidencia(s) registrada(s) automáticamente desde observaciones`);
+      toast(`📋 ${toCreate.length} incidencia(s) registrada(s) automáticamente`);
     }
   }
 }
@@ -931,7 +942,27 @@ async function apiInv(method, qs, body) {
 }
 async function insertRecord(data)      { showLoading(true); setSyncStatus('loading','Guardando…'); try { await apiInv('POST','',data); toast('✅ Equipo añadido'); await syncAll(); } catch(e) { setSyncStatus('err','Error'); toast('❌ '+e.message); showLoading(false); } }
 async function updateRecord(id, data)  { showLoading(true); setSyncStatus('loading','Actualizando…'); try { await apiInv('PATCH',`?id=eq.${id}`,data); toast('✅ Guardado'); await syncAll(); } catch(e) { setSyncStatus('err','Error'); toast('❌ '+e.message); showLoading(false); } }
-async function deleteRecord(id)        { showLoading(true); setSyncStatus('loading','Eliminando…'); try { await apiInv('DELETE',`?id=eq.${id}`); toast('🗑 Eliminado'); await syncAll(); } catch(e) { setSyncStatus('err','Error'); toast('❌ '+e.message); showLoading(false); } }
+async function deleteRecord(id) {
+  showLoading(true);
+  setSyncStatus('loading', 'Eliminando…');
+  try {
+    // Mark related incidencias as orphaned (equipo eliminado) before deleting
+    const related = allInc.filter(i => i.equipo_id === id);
+    for (const inc of related) {
+      await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_INC}?id=eq.${inc.id}`, {
+        method: 'PATCH', headers: H,
+        body: JSON.stringify({ equipo_eliminado: true, equipo_id: null })
+      });
+    }
+    await apiInv('DELETE', `?id=eq.${id}`);
+    toast('🗑 Equipo eliminado' + (related.length ? ` · ${related.length} incidencia(s) conservada(s)` : ''));
+    await syncAll();
+  } catch(e) {
+    setSyncStatus('err', 'Error');
+    toast('❌ ' + e.message);
+    showLoading(false);
+  }
+}
 
 // ══════════════════════════════════════
 //  INCIDENCIAS SUPABASE CRUD
@@ -1109,8 +1140,9 @@ function renderIncidencias() {
   if (!rows.length) { grid.innerHTML='<p style="color:var(--text3);text-align:center;padding:3rem">Sin incidencias con esos filtros</p>'; return; }
   grid.innerHTML = rows.map(i => {
     const resuelta = i.estado === 'Resuelta';
+    const huerfana = i.equipo_eliminado === true;
     const checked = resuelta ? 'checked' : '';
-    const cardCls = resuelta ? 'inc-card resuelta' : 'inc-card';
+    const cardCls = huerfana ? 'inc-card huerfana' : (resuelta ? 'inc-card resuelta' : 'inc-card');
     const badgeCls = resuelta ? 'inc-badge resuelta' : 'inc-badge pendiente';
     const badgeTxt = resuelta ? '✓ Resuelta' : '⏳ Pendiente';
     const fechaAp = fmtDate(i.fecha_apertura);
@@ -1125,6 +1157,7 @@ function renderIncidencias() {
           <span class="inc-equipo">${esc(i.equipo_desc||'—')}</span>
           <span class="inc-ubi">📍 ${esc(i.ubicacion||'—')}</span>
           <span class="${badgeCls}">${badgeTxt}</span>
+          ${huerfana ? '<span class="inc-badge huerfana">🗑 Equipo eliminado</span>' : ''}
         </div>
         <div class="inc-defecto">🔧 ${esc(i.defecto)}</div>
         <div class="inc-meta">
